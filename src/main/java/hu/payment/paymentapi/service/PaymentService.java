@@ -2,12 +2,15 @@ package hu.payment.paymentapi.service;
 
 import hu.payment.paymentapi.dto.SendMoneyRequest;
 import hu.payment.paymentapi.exception.PaymentException;
+import hu.payment.paymentapi.kafka.KafkaProducerService;
 import hu.payment.paymentapi.model.Currency;
 import hu.payment.paymentapi.model.MoneyAccount;
 import hu.payment.paymentapi.model.UserAccount;
 import hu.payment.paymentapi.repository.MoneyRepository;
 import hu.payment.paymentapi.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,15 +22,15 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class PaymentService {
 
+    private static final Logger logger = LoggerFactory.getLogger(PaymentService.class);
     private final MoneyRepository moneyRepository;
     private final UserRepository userRepository;
+    private final KafkaProducerService kafkaProducerService;
 
     public void sendMoney(SendMoneyRequest sendMoneyRequest) {
         transferMoney(sendMoneyRequest.getSender(),sendMoneyRequest.getCurrency(),
                 sendMoneyRequest.getAmount(),sendMoneyRequest.getRecipient());
     }
-
-
 
     // Method to transfer money between two users' accounts
     @Transactional
@@ -48,7 +51,7 @@ public class PaymentService {
         UserAccount recipientUser = recipientUserOptional.get();
 
         //Get sender moneyAcc
-        Optional<MoneyAccount> senderAccountOptional = moneyRepository.findByIdAndCurrency(senderUser.getId(), currency);
+        Optional<MoneyAccount> senderAccountOptional = moneyRepository.findByIdAndCurrencyWithLock(senderUser.getId(), currency);
         if (senderAccountOptional.isEmpty()) {
             throw new PaymentException("SENDER_USER_NOT_HAVE_" + currency + "_ACCOUNT");
         }
@@ -59,7 +62,7 @@ public class PaymentService {
         }
 
         //Get receiver moneyAcc
-        Optional<MoneyAccount> recipientAccountOptional = moneyRepository.findByIdAndCurrency(recipientUser.getId(), currency);
+        Optional<MoneyAccount> recipientAccountOptional = moneyRepository.findByIdAndCurrencyWithLock(recipientUser.getId(), currency);
         if (recipientAccountOptional.isEmpty()) {
             throw new PaymentException("RECIPIENT_USER_NOT_HAVE_" + currency + "_ACCOUNT");
         }
@@ -70,6 +73,11 @@ public class PaymentService {
         // Add the amount to the receiver's account
         recipientMoneyAccount.setAmount(recipientMoneyAccount.getAmount().add(transferAmount));
         moneyRepository.saveAll(Set.of(senderMoneyAccount,recipientMoneyAccount));  // Update accounts balance
+        // Send Kafka message asynchronously
+        String message = String.format("Transfer successful: %s sent %s %s to %s",
+                senderUser.getUsername(), transferAmount, currency, recipientUser.getUsername());
+        logger.info("Sending to Kafka " + message);
 
+        kafkaProducerService.sendTransactionNotification(recipientUser.getUsername(), message);
     }
 }
