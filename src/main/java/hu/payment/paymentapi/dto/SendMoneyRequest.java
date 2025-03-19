@@ -12,4 +12,5 @@ public class SendMoneyRequest {
     private String recipient;
     private BigDecimal amount;
     private Currency currency;
+    private String transactionId;
 }

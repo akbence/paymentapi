@@ -5,8 +5,10 @@ import hu.payment.paymentapi.exception.PaymentException;
 import hu.payment.paymentapi.kafka.KafkaProducerService;
 import hu.payment.paymentapi.model.Currency;
 import hu.payment.paymentapi.model.MoneyAccount;
+import hu.payment.paymentapi.model.Transaction;
 import hu.payment.paymentapi.model.UserAccount;
 import hu.payment.paymentapi.repository.MoneyRepository;
+import hu.payment.paymentapi.repository.TransactionRepository;
 import hu.payment.paymentapi.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -26,16 +28,23 @@ public class PaymentService {
     private final MoneyRepository moneyRepository;
     private final UserRepository userRepository;
     private final KafkaProducerService kafkaProducerService;
+    private final TransactionRepository transactionRepository;
 
     public void sendMoney(SendMoneyRequest sendMoneyRequest) {
         transferMoney(sendMoneyRequest.getSender(),sendMoneyRequest.getCurrency(),
-                sendMoneyRequest.getAmount(),sendMoneyRequest.getRecipient());
+                sendMoneyRequest.getAmount(),sendMoneyRequest.getRecipient(),sendMoneyRequest.getTransactionId());
     }
 
     // Method to transfer money between two users' accounts
     @Transactional
     public void transferMoney(String senderUsername, Currency currency, BigDecimal transferAmount,
-                                 String recipientUsername) {
+                              String recipientUsername, String incomingTransactionId) {
+
+        //Check if the transaction already processed
+        Optional<Transaction> transactionOptional = transactionRepository.findByincomingTransactionalId(incomingTransactionId);
+        if (transactionOptional.isPresent()){
+            throw new PaymentException("TRANSACTION_ALREADY_PROCESSED");
+        }
 
         //Get the sender
         Optional<UserAccount> senderUserOptional = userRepository.findByUsername(senderUsername);
@@ -73,11 +82,24 @@ public class PaymentService {
         // Add the amount to the receiver's account
         recipientMoneyAccount.setAmount(recipientMoneyAccount.getAmount().add(transferAmount));
         moneyRepository.saveAll(Set.of(senderMoneyAccount,recipientMoneyAccount));  // Update accounts balance
+        //create a transaction history
+        Transaction transaction = createTransaction(currency, transferAmount, incomingTransactionId, recipientUser, senderUser);
+        transactionRepository.save(transaction);
         // Send Kafka message asynchronously
         String message = String.format("Transfer successful: %s sent %s %s to %s",
                 senderUser.getUsername(), transferAmount, currency, recipientUser.getUsername());
         logger.info("Sending to Kafka " + message);
 
         kafkaProducerService.sendTransactionNotification(recipientUser.getUsername(), message);
+    }
+
+    private static Transaction createTransaction(Currency currency, BigDecimal transferAmount, String incomingTransactionId, UserAccount recipientUser, UserAccount senderUser) {
+        Transaction transaction = new Transaction();
+        transaction.setReceiverAccount(recipientUser);
+        transaction.setSenderAccount(senderUser);
+        transaction.setIncomingTransactionalId(incomingTransactionId);
+        transaction.setCurrency(currency);
+        transaction.setAmount(transferAmount);
+        return transaction;
     }
 }
