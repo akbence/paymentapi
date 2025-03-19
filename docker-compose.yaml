@@ -1,0 +1,27 @@
+version: '3'
+services:
+  db:
+    image: postgres:latest
+    container_name: postgres-container
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: financedb
+    ports:
+      - "5432:5432"
+    networks:
+      - app-network
+    restart: always
+
+  adminer:
+    image: adminer
+    container_name: adminer-container
+    ports:
+      - "8081:8080"
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge
