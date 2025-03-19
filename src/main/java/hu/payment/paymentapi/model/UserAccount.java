@@ -15,6 +15,7 @@ import java.util.Set;
 @ToString
 public class UserAccount extends AuditEntityBase{
 
+
     private String username;
 
     @OneToMany(mappedBy = "userAccount")
