@@ -30,14 +30,14 @@ public class PaymentService {
     private final KafkaProducerService kafkaProducerService;
     private final TransactionRepository transactionRepository;
 
+    @Transactional
     public void sendMoney(SendMoneyRequest sendMoneyRequest) {
         transferMoney(sendMoneyRequest.getSender(),sendMoneyRequest.getCurrency(),
                 sendMoneyRequest.getAmount(),sendMoneyRequest.getRecipient(),sendMoneyRequest.getTransactionId());
     }
 
     // Method to transfer money between two users' accounts
-    @Transactional
-    public void transferMoney(String senderUsername, Currency currency, BigDecimal transferAmount,
+    private void transferMoney(String senderUsername, Currency currency, BigDecimal transferAmount,
                               String recipientUsername, String incomingTransactionId) {
 
         //Check if the transaction already processed
