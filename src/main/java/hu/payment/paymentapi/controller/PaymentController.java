@@ -27,7 +27,7 @@ public class PaymentController {
     @ApiResponse(responseCode = "201", description = "Payment transferred successfully")
     @PostMapping("/sendMoney")
     public ResponseEntity<String> postSendMoney(@Valid @RequestBody SendMoneyRequest sendMoneyRequest){
-        paymentService.sendMoney(sendMoneyRequest);
+        paymentService.transferMoney(sendMoneyRequest);
         return new ResponseEntity<>("Transaction created successfully", HttpStatus.CREATED);
     }
 

@@ -30,28 +30,27 @@ public class PaymentService {
     private final KafkaProducerService kafkaProducerService;
     private final TransactionRepository transactionRepository;
 
-    public void sendMoney(SendMoneyRequest sendMoneyRequest) {
-        transferMoney(sendMoneyRequest.getSender(),sendMoneyRequest.getCurrency(),
-                sendMoneyRequest.getAmount(),sendMoneyRequest.getRecipient(),sendMoneyRequest.getTransactionId());
-    }
-
-    // Method to transfer money between two users' accounts
     @Transactional
-    public void transferMoney(String senderUsername, Currency currency, BigDecimal transferAmount,
-                              String recipientUsername, String incomingTransactionId) {
+    public void transferMoney(SendMoneyRequest sendMoneyRequest) {
+        // Directly using parameters from SendMoneyRequest object
+        String senderUsername = sendMoneyRequest.getSender();
+        Currency currency = sendMoneyRequest.getCurrency();
+        BigDecimal transferAmount = sendMoneyRequest.getAmount();
+        String recipientUsername = sendMoneyRequest.getRecipient();
+        String incomingTransactionId = sendMoneyRequest.getTransactionId();
 
-        //Check if the transaction already processed
+        // Check if the transaction already processed
         Optional<Transaction> transactionOptional = transactionRepository.findByincomingTransactionalId(incomingTransactionId);
         if (transactionOptional.isPresent()){
             throw new PaymentException("TRANSACTION_ALREADY_PROCESSED");
         }
 
-        //Get the sender
+        // Get the sender
         Optional<UserAccount> senderUserOptional = userRepository.findByUsername(senderUsername);
         if (senderUserOptional.isEmpty()){
             throw new PaymentException("SENDER_USER_NOT_EXISTS");
         }
-        //Get the recipient
+        // Get the recipient
         Optional<UserAccount> recipientUserOptional = userRepository.findByUsername(recipientUsername);
         if (recipientUserOptional.isEmpty()){
             throw new PaymentException("RECIPIENT_USER_NOT_EXISTS");
@@ -59,7 +58,7 @@ public class PaymentService {
         UserAccount senderUser = senderUserOptional.get();
         UserAccount recipientUser = recipientUserOptional.get();
 
-        //Get sender moneyAcc
+        // Get sender money account
         Optional<MoneyAccount> senderAccountOptional = moneyRepository.findByIdAndCurrencyWithLock(senderUser.getId(), currency);
         if (senderAccountOptional.isEmpty()) {
             throw new PaymentException("SENDER_USER_NOT_HAVE_" + currency + "_ACCOUNT");
@@ -67,10 +66,10 @@ public class PaymentService {
         MoneyAccount senderMoneyAccount = senderAccountOptional.get();
         // Check if the account has sufficient balance
         if(senderMoneyAccount.getAmount().compareTo(transferAmount) < 0){
-            throw new PaymentException("SENDER_USER_NOT_HAVE_ENOUGH_BALLANCE");
+            throw new PaymentException("SENDER_USER_NOT_HAVE_ENOUGH_BALANCE");
         }
 
-        //Get receiver moneyAcc
+        // Get receiver money account
         Optional<MoneyAccount> recipientAccountOptional = moneyRepository.findByIdAndCurrencyWithLock(recipientUser.getId(), currency);
         if (recipientAccountOptional.isEmpty()) {
             throw new PaymentException("RECIPIENT_USER_NOT_HAVE_" + currency + "_ACCOUNT");
@@ -82,9 +81,11 @@ public class PaymentService {
         // Add the amount to the receiver's account
         recipientMoneyAccount.setAmount(recipientMoneyAccount.getAmount().add(transferAmount));
         moneyRepository.saveAll(Set.of(senderMoneyAccount,recipientMoneyAccount));  // Update accounts balance
-        //create a transaction history
+
+        // Create a transaction history
         Transaction transaction = createTransaction(currency, transferAmount, incomingTransactionId, recipientUser, senderUser);
         transactionRepository.save(transaction);
+
         // Send Kafka message asynchronously
         String message = String.format("Transfer successful: %s sent %s %s to %s",
                 senderUser.getUsername(), transferAmount, currency, recipientUser.getUsername());
